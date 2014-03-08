@@ -22,7 +22,10 @@ public class StoryBehavior : MonoBehaviour {
     IEnumerator<Action> _currAction;
     bool _ready;
     bool _haltForInput;
+    bool _skip;
+
     int _lineId;
+    int _stLineId;
     string _storyScript;
 
     float virtualWidth = 1920.0f;
@@ -55,6 +58,8 @@ public class StoryBehavior : MonoBehaviour {
 
         UnpackProgress(StoryData.Progress);
 
+
+
         Component storySection = this.gameObject.AddComponent(_storyScript);
 
         GUIStart();
@@ -75,15 +80,25 @@ public class StoryBehavior : MonoBehaviour {
     {
         if (!_haltForInput) return;
 
-        if (Input.GetKeyDown(KeyCode.Space))
+        if (Input.GetKeyDown(KeyCode.X))
         {
-            _haltForInput = false;
+            _skip = true;
         }
+        else if (Input.GetKeyUp(KeyCode.X))
+        {
+            _skip = false;
+        }
+
+        _haltForInput = !Input.GetKeyDown(KeyCode.Space) && !_skip;
 
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             GUIEnd(); 
         }
+
+
+
+        
     }
 
     void ProcessAction()
@@ -96,11 +111,9 @@ public class StoryBehavior : MonoBehaviour {
 
             if (!_currAction.MoveNext())
             {
-                // end of action
+                break;// TODO: end of story
             }
         }
-
-        
     }
 
     #endregion
@@ -128,8 +141,7 @@ public class StoryBehavior : MonoBehaviour {
 
         GameObject camera = iTween.CameraFadeAdd();
         iTween.CameraFadeFrom(args);
-        
-        
+
 
         float x = virtualWidth * 0.1f;
         float y = virtualHeight * 0.75f;
@@ -210,15 +222,17 @@ public class StoryBehavior : MonoBehaviour {
 
         foreach (Character character in _characterMap.Values)
         {
+            // FIXME: temporary code for face postion
             float x = character.Postion;
             float y = virtualHeight - 900;
             float width = 600;
             float height = 900;
             Rect rect = new Rect(x, y, width, height);
-
+            
             GUI.DrawTexture(rect, character.FaceTexture);
         }
 
+        // FIXME: bad practice using style
         GUIStyle st;
         st = GUISkin.box;
         Color textClr = st.normal.textColor;
@@ -254,7 +268,6 @@ public class StoryBehavior : MonoBehaviour {
 
     void OnEndLeave()
     {
-        print("!");
         Application.LoadLevel(0);
     }
 
@@ -278,54 +291,43 @@ public class StoryBehavior : MonoBehaviour {
 
     static public void MoveCharacter(string name, int newPos)
     {
-
+        // TODO: animate character
     }
 
     static public void ChangeCharacterFace(string name, string face)
     {
         Character character = Instance._characterMap[name];
         Texture2D faceTex = Resources.Load<Texture2D>("character/" + face);
-        print(faceTex);
+
         character.Face = face;
         character.FaceTexture = faceTex;
     }
 
     static public void SendDialog(string name, string dialog)
     {
-        print(dialog);
         Instance._dialogContent = dialog;
         Instance._dialogSpeaker = name;
         Instance._haltForInput = true;
 
-        Hashtable args;
-
-        if (Instance._lineId != 0)
+        // TODO: add anim switch
+        if (!Instance._skip)
         {
+            Hashtable args;
+
             args = new Hashtable()
             {
                 {"easeType", iTween.EaseType.easeOutExpo},
                 {"time", 0.25f},
-                {"from", 1},
-                {"to", 0},
+                {"from", 0},
+                {"to", 1f},
                 {"onupdate", "OnUpdateDialogAlpha"},
             };
 
             iTween.ValueTo(Instance.gameObject, args);
         }
 
-        args = new Hashtable()
-        {
-            {"easeType", iTween.EaseType.easeOutExpo},
-            {"time", 0.25f},
-            {"delay", 0.25f},
-            {"from", 0},
-            {"to", 1f},
-            {"onupdate", "OnUpdateDialogAlpha"},
-        };
-
-        iTween.ValueTo(Instance.gameObject, args);
-
         ++Instance._lineId;
+        print(Instance.PackProgress());
     }
 
     static public void SetBackground(string bg)
@@ -356,6 +358,20 @@ public class StoryBehavior : MonoBehaviour {
     {
         Instance._currAction = Instance.ActionList.GetEnumerator();
         Instance._currAction.MoveNext();
+
+        if (Instance._stLineId != 0)
+        {
+            while (Instance._lineId < Instance._stLineId - 1)
+            {
+                Instance._skip = true;
+                Instance.ProcessAction();
+                Instance._haltForInput = false;
+            }
+
+            Instance._skip = false;
+        }
+
+        
     }
 
     static public void AddAction(Action action)
@@ -378,9 +394,9 @@ public class StoryBehavior : MonoBehaviour {
         
         _storyScript = tokens[0];
 
-        if(!Int32.TryParse(tokens[1], out _lineId))
+        if (!Int32.TryParse(tokens[1], out _stLineId))
         {
-            _lineId = 0;
+            _stLineId = 0;
         }
     }
 

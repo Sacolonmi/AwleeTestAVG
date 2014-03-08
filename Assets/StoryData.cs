@@ -34,7 +34,7 @@ public class StoryData : MonoBehaviour {
 
     /// <summary>
     /// *Currnet* story progress in the past time with the same format with CurrentStory.
-    /// It will be null when in present time mode. It's only valid in the past time.
+    /// It will be undefined when in present time mode. It's only valid in the past time.
     /// </summary>
     public static string PastProgress { get; set; }
 
