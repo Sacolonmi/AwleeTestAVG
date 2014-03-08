@@ -8,7 +8,7 @@ public class Ch0_0 : StorySection
         Character e = new Character("E", "e_normal");
 
         e.Enter(1);
-
+        // test
         e.Say("talk 1");
 
         e.Say("talk 2");
