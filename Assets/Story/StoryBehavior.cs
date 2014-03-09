@@ -8,110 +8,142 @@ using System.Linq;
 /// <summary>
 /// Contorls currnet story progressing, dialog and simple animation.
 /// </summary>
-public class StoryBehavior : MonoBehaviour {
+public class StoryBehavior : MonoBehaviour
+{
 
     /// <summary>
     /// Singleton instance of StoryBehavior
     /// </summary>
     static public StoryBehavior Instance { get; set; }
 
+    static public Matrix4x4 GUIMatrix { get; private set; }
+
+    /// <summary>
+    /// Is there any animation playing?
+    /// </summary>
+    public bool IsReady { get; set; }
+
+    /// <summary>
+    /// Should the story pause for input?
+    /// </summary>
+    public bool HaltForInput { get; set; }
+
+    /// <summary>
+    /// If animation should play?
+    /// </summary>
+    public bool Skipping { get; set; }
+
+    /// <summary>
+    /// If current stroy is rewinding to load position.
+    /// </summary>
+    public bool IsRewinding { get; set; }
+
     public List<Action> ActionList { get; set; }
+
     public GUISkin GUISkin;
-
-
-    IEnumerator<Action> _currAction;
-    bool _ready;
-    bool _haltForInput;
-    bool _skip;
-
-    int _lineId;
-    int _stLineId;
-    string _storyScript;
-
-    float virtualWidth = 1920.0f;
-    float virtualHeight = 1080.0f;
-    Matrix4x4 myGUIMatrix;
-
-    Rect _dialogBox;
-    string _dialogContent;
-    string _dialogSpeaker;
-    float _dialogAlpha;
+    public Vector2 VirtualSize;
 
     Dictionary<string, Character> _characterMap;
+
+    int _stActionId;
+    int _currActionID;
+    string _storyScript;
+
+    DialogWindow _dialogWindow;
+
+    SelectionWindow _selectionWindow;
+    
 
     #region # Mono behavior
 
     void Awake()
     {
+        
         Instance = this;
 
         ActionList = new List<Action>();
 
         _characterMap = new Dictionary<string, Character>();
-
-        _dialogSpeaker = "";
-        _dialogContent = "";
     }
 
-	// Use this for initialization
-	void Start () {
+    // Use this for initialization
+    void Start()
+    {
 
         UnpackProgress(StoryData.Progress);
 
+        Story.StorySection storySection = this.gameObject.AddComponent(_storyScript) as Story.StorySection;
 
+        print("sb start");
 
-        Component storySection = this.gameObject.AddComponent(_storyScript);
+        _dialogWindow = this.gameObject.GetComponent<DialogWindow>() as DialogWindow;
+
+        _selectionWindow = this.gameObject.GetComponent<SelectionWindow>() as SelectionWindow;
 
         GUIStart();
-	}
-	
-	// Update is called once per frame
-	void Update () {
+    }
 
-        if (_ready)
+    // Update is called once per frame
+    void Update()
+    {
+        if (IsReady)
         {
             ProcessAction();
 
             ProcessInput();
         }
-	}
+    }
 
     void ProcessInput()
     {
-        if (!_haltForInput) return;
+        if (!HaltForInput) return;
 
-        if (Input.GetKeyDown(KeyCode.X))
+        if (Input.GetButtonDown("Skip"))
         {
-            _skip = true;
+            Skipping = true;
         }
-        else if (Input.GetKeyUp(KeyCode.X))
+        else if (Input.GetButtonUp("Skip"))
         {
-            _skip = false;
+            Skipping = false;
         }
 
-        _haltForInput = !Input.GetKeyDown(KeyCode.Space) && !_skip;
+        HaltForInput = !Input.GetButtonDown("Confirm") && !Skipping;
+
+        /*
+        if (_selectionItems != null)
+        {
+            if (Input.GetButtonDown("Vertical"))
+            {
+                _selectionId += (Input.GetAxis("Vertical") < 0) ? 1 : -1;
+
+                _selectionId = Mathf.Clamp(_selectionId, 0, _selectionItems.Length - 1);
+            }
+
+            if (_selectionId >= _selectionItems.Length || _selectionId < 0)
+            {
+                _haltForInput = true;
+            }
+        }
+        */
 
         if (Input.GetKeyDown(KeyCode.Escape))
         {
-            GUIEnd(); 
+            // FIXME: test code for leave
+            GUIEnd();
         }
-
-
-
-        
     }
 
     void ProcessAction()
     {
-        if (_currAction == null) return;
-
-        while (!_haltForInput && _currAction.Current != null)
+        while (!HaltForInput && IsReady)
         {
-            _currAction.Current.Invoke();
+            ActionList[_currActionID].Invoke();
 
-            if (!_currAction.MoveNext())
+            ++_currActionID;
+
+            if (_currActionID >= ActionList.Count)
             {
-                break;// TODO: end of story
+                _currActionID = 0; break;
             }
         }
     }
@@ -123,11 +155,11 @@ public class StoryBehavior : MonoBehaviour {
 
     void GUIStart()
     {
-        _ready = false;
+        IsReady = false;
 
-        myGUIMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity,
-            new Vector3(Screen.width / virtualWidth,
-                Screen.height / virtualHeight,
+        GUIMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity,
+            new Vector3(Screen.width / VirtualSize.x,
+                Screen.height / VirtualSize.y,
                 1.0f));
 
         Hashtable args;
@@ -142,128 +174,57 @@ public class StoryBehavior : MonoBehaviour {
         GameObject camera = iTween.CameraFadeAdd();
         iTween.CameraFadeFrom(args);
 
-
-        float x = virtualWidth * 0.1f;
-        float y = virtualHeight * 0.75f;
-        float width = virtualWidth * 0.8f;
-        float height = virtualHeight * 0.2f;
-
-        _dialogBox = new Rect(x, y + 500, width, height);
-
-        args = new Hashtable()
-        {
-            {"easeType", iTween.EaseType.easeOutExpo},
-            {"time", 1.0f},
-            {"delay", 0.5f},
-            {"from", _dialogBox},
-            {"to", new Rect(x, y, width, height)},
-            {"onupdate", "OnUpdateDialogWindow"},
-            {"oncomplete", "OnEndAnim"},
-        };
-
-        iTween.ValueTo(gameObject, args);
     }
 
     void GUIEnd()
     {
-        _ready = false;
+        IsReady = false;
 
-        Hashtable args;
-
-        args = new Hashtable()
-        {
-            {"easeType", iTween.EaseType.easeInExpo},
-            {"time", 0.25f},
-            {"from", 1},
-            {"to", 0},
-            {"onupdate", "OnUpdateDialogAlpha"},
-        };
-
-        iTween.ValueTo(gameObject, args);
+        _dialogWindow.Leave();
 
 
-        float x = virtualWidth * 0.1f;
-        float y = virtualHeight * 0.75f;
-        float width = virtualWidth * 0.8f;
-        float height = virtualHeight * 0.2f;
-
-        _dialogBox = new Rect(x, y, width, height);
-
-        args = new Hashtable()
-        {
-            {"easeType", iTween.EaseType.easeInExpo},
-            {"time", 0.5f},
-            {"from", _dialogBox},
-            {"to", new Rect(x, y + 500, width, height)},
-            {"onupdate", "OnUpdateDialogWindow"},
-            
-        };
-
-        iTween.ValueTo(gameObject, args);
-
-        args = new Hashtable()
+        iTween.CameraFadeTo(new Hashtable()
         {
             {"easeType", iTween.EaseType.easeInCubic},
             {"time", 1f},
-            {"delay", 0.5f},
+            {"delay", 0.25f},
             {"amount", 1f},
             {"oncomplete", "OnEndLeave"},
             {"oncompletetarget", gameObject},
-        };
+        });
 
-        iTween.CameraFadeTo(args);
-        
+        foreach (Character character in _characterMap.Values)
+        {
+            character.Leave();
+        }
     }
 
     void OnGUI()
     {
-        GUI.matrix = myGUIMatrix;
+        GUI.matrix = GUIMatrix;
         GUI.skin = GUISkin;
-
-        foreach (Character character in _characterMap.Values)
+        /*
+        if (_selectionItems != null)
         {
-            // FIXME: temporary code for face postion
-            float x = character.Postion;
-            float y = virtualHeight - 900;
-            float width = 600;
-            float height = 900;
-            Rect rect = new Rect(x, y, width, height);
-            
-            GUI.DrawTexture(rect, character.FaceTexture);
-        }
+            for (int i = 0; i < _selectionItems.Length; ++i)
+            {
+                GUI.SetNextControlName("item" + i);
+                if (GUI.Button(_selectionRects[i], _selectionItems[i]) && !_skip)
+                {
+                    _selectionId = i;
+                    _haltForInput = false;
+                }
+            }
 
-        // FIXME: bad practice using style
-        GUIStyle st;
-        st = GUISkin.box;
-        Color textClr = st.normal.textColor;
-        textClr.a = _dialogAlpha;
-        st.normal.textColor = textClr;
-        
-        GUI.Box(_dialogBox, _dialogSpeaker, st);
+            GUI.FocusControl("item" + _selectionId);
+        }*/
 
-        st = GUISkin.label;
-        textClr = st.normal.textColor;
-        textClr.a = _dialogAlpha;
-        st.normal.textColor = textClr;
-
-        GUI.Label(_dialogBox, _dialogContent, st);
-
-        GUI.Label(new Rect(0, virtualHeight - 30, 100, 30), "w: " + virtualWidth + " h: " + virtualHeight);
-    }
-
-    void OnUpdateDialogWindow(Rect rect)
-    {
-        _dialogBox = rect;
-    }
-
-    void OnUpdateDialogAlpha(float alpha)
-    {
-        _dialogAlpha = alpha;
+        GUI.Label(new Rect(0, VirtualSize.y - 30, 300, 30), "w: " + VirtualSize.x + " h: " + VirtualSize.y);
     }
 
     void OnEndAnim()
     {
-        _ready = true;
+        IsReady = true;
     }
 
     void OnEndLeave()
@@ -274,113 +235,163 @@ public class StoryBehavior : MonoBehaviour {
     #endregion
 
 
-    #region # Static method for stroy section handling
+    #region # Methods for stroy section handling
 
-    static public void AddCharacter(string name, string face, int pos)
+    public void AddCharacter(string name, string face, int pos)
     {
-        Character newChar = new Character(name, face);
-
-        Instance._characterMap.Add(name, newChar);
-        ChangeCharacterFace(name, face);
-    }
-
-    static public void RemoveCharacter(string name)
-    {
-
-    }
-
-    static public void MoveCharacter(string name, int newPos)
-    {
-        // TODO: animate character
-    }
-
-    static public void ChangeCharacterFace(string name, string face)
-    {
-        Character character = Instance._characterMap[name];
-        Texture2D faceTex = Resources.Load<Texture2D>("character/" + face);
-
-        character.Face = face;
-        character.FaceTexture = faceTex;
-    }
-
-    static public void SendDialog(string name, string dialog)
-    {
-        Instance._dialogContent = dialog;
-        Instance._dialogSpeaker = name;
-        Instance._haltForInput = true;
-
-        // TODO: add anim switch
-        if (!Instance._skip)
+        if (!_characterMap.ContainsKey(name))
         {
-            Hashtable args;
+            GameObject newCharObj =
+                Instantiate(Resources.Load<GameObject>("character/Character")) as GameObject;
 
-            args = new Hashtable()
-            {
-                {"easeType", iTween.EaseType.easeOutExpo},
-                {"time", 0.25f},
-                {"from", 0},
-                {"to", 1f},
-                {"onupdate", "OnUpdateDialogAlpha"},
-            };
+            Character newChar = newCharObj.GetComponent<Character>();
+            _characterMap.Add(name, newChar);
 
-            iTween.ValueTo(Instance.gameObject, args);
+            newChar.Initialize(face, pos);
         }
-
-        ++Instance._lineId;
-        print(Instance.PackProgress());
     }
 
-    static public void SetBackground(string bg)
+    public void RemoveCharacter(string name)
     {
-
-    }
-
-    static public void SetBGM(string bgm)
-    {
-
-    }
-
-    static public void PlayAudio(string audio)
-    {
-
-    }
-
-    static public void Init()
-    {
-        Instance.ActionList.Clear();
-
-        Instance._haltForInput = false;
-
-        Instance._lineId = 0;
-    }
-
-    static public void EndInit()
-    {
-        Instance._currAction = Instance.ActionList.GetEnumerator();
-        Instance._currAction.MoveNext();
-
-        if (Instance._stLineId != 0)
+        var charMap = _characterMap;
+        if (charMap.ContainsKey(name))
         {
-            while (Instance._lineId < Instance._stLineId - 1)
+            Character character = charMap[name];
+
+            character.Leave();
+
+            charMap.Remove(name);
+        }
+    }
+
+    public void MoveCharacter(string name, int newPos, float speed, iTween.EaseType easeType)
+    {
+        Character character = _characterMap[name];
+
+        character.MoveTo(newPos, speed, easeType);
+
+        print(PackProgress() + " : " + name + newPos);
+    }
+
+    public void ChangeCharacterFace(string name, string face)
+    {
+        Character character = _characterMap[name];
+
+        character.ChangeFace(face);
+
+        print(PackProgress() + " : " + face);
+    }
+
+    public void SendDialog(string name, string dialog)
+    {
+        HaltForInput = true;
+        _dialogWindow.ShowDialog(name, dialog);
+
+        print(PackProgress() + " : " + dialog);
+    }
+
+    public void StartSelection(string[] items)
+    {
+        // TODO: save state and record
+        // TODO: show selection menu
+
+        _selectionWindow.ShowSelection(items);
+
+        print(PackProgress() + " : " + items);
+    }
+
+    public void ResolveSelection(Action[] results, string selectionName)
+    {
+
+        // TODO: insert results after current iterator
+        // TODO: save state
+        // TODO: decide if this is to pass
+
+        _selectionWindow.ResolveSelection(results, selectionName);
+
+        print(PackProgress() + " : " + selectionName);
+    }
+
+    public void SetBackground(string bg)
+    {
+
+    }
+
+    public void SetBGM(string bgm)
+    {
+
+    }
+
+    public void PlayAudio(string audio)
+    {
+
+    }
+
+    public void ToNextScene(string scene)
+    {
+
+    }
+
+    public void Init()
+    {
+        ActionList.Clear();
+
+        HaltForInput = false;
+    }
+
+    public void EndInit()
+    {
+        _currActionID = 0;
+
+        if (_stActionId != 0)
+        {
+            IsRewinding = true;
+            
+            for (_currActionID = 0; _currActionID < _stActionId; ++_currActionID )
             {
-                Instance._skip = true;
-                Instance.ProcessAction();
-                Instance._haltForInput = false;
+                ActionList[_currActionID].Invoke();
             }
 
-            Instance._skip = false;
+            IsRewinding = false;
+            HaltForInput = false;
         }
-
-        
     }
 
-    static public void AddAction(Action action)
+    public void AddAction(Action action)
     {
-        Instance.ActionList.Add(action);
+        ActionList.Add(action);
+    }
+
+    public void InsertAction(Action actionPack)
+    {
+        List<Action> tempActionList = ActionList;
+        ActionList = new List<Action>();
+
+        actionPack.Invoke();
+
+        tempActionList.InsertRange(_currActionID + 1, ActionList);
+        ActionList = tempActionList;
     }
 
     #endregion
 
+    #region Static position methods
+
+    static public Rect GetPostionRect(int pos)
+    {
+        float x = GetPostionX(pos);
+        float y = Instance.VirtualSize.y - 900;
+        float width = 600;
+        float height = 900;
+        return new Rect(x, y, width, height);
+    }
+
+    static public float GetPostionX(int pos)
+    {
+        return pos * (Instance.VirtualSize.x) / 6.0f;
+    }
+
+    #endregion
 
     #region # Progress string processing
 
@@ -388,15 +399,15 @@ public class StoryBehavior : MonoBehaviour {
     /// Unpack incoming progress string.
     /// </summary>
     /// <param name="progress">Progress string form StoryData</param>
-    void UnpackProgress(string progress)
+    public void UnpackProgress(string progress)
     {
         string[] tokens = progress.Split(':');
-        
+
         _storyScript = tokens[0];
 
-        if (!Int32.TryParse(tokens[1], out _stLineId))
+        if (!Int32.TryParse(tokens[1], out _stActionId))
         {
-            _stLineId = 0;
+            _stActionId = 0;
         }
     }
 
@@ -404,10 +415,10 @@ public class StoryBehavior : MonoBehaviour {
     /// Pack up current data into progress string
     /// </summary>
     /// <returns>Progress string for StroyData</returns>
-    String PackProgress()
+    public String PackProgress()
     {
         StringBuilder sb = new StringBuilder(_storyScript);
-        sb.AppendFormat(":{0}", _lineId);
+        sb.AppendFormat(":{0}", _currActionID);
 
         return sb.ToString();
     }

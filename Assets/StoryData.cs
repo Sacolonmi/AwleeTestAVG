@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 /// <summary>
 /// Stores data about progress and some story state.
@@ -38,12 +39,57 @@ public class StoryData : MonoBehaviour {
     /// </summary>
     public static string PastProgress { get; set; }
 
+    /// <summary>
+    /// Selection made by player.
+    /// If the option is made in newest progress the flag is set. If it is made before the flag is reset.
+    /// Other it is null;
+    /// </summary>
+    public static Dictionary<string, bool?[]> SelectionTable { get; private set; }
 
     static StoryData()
     {
         IsPresent = true;
         CurrentProgress = "Ch0_0:0";
         PastProgress = null;
+
+        SelectionTable = new Dictionary<string, bool?[]>();
+        //UpdateSelectionResult("ExampleSelection", 1);
+    }
+
+    static public  int GetNewestSelectionResult(string selectionName)
+    {
+        bool?[] decList = SelectionTable[selectionName];
+        for (int i = 0; i < decList.Length; ++i)
+        {
+            if (decList[i] != null && decList[i].Value)
+            {
+                return i;
+            }
+        }
+
+        Debug.LogError("Currupted selection data");
+        return -1;
+    }
+
+    static public void UpdateSelectionResult(string selectionName, int decisition)
+    {
+        if (!SelectionTable.ContainsKey(selectionName))
+        {
+            SelectionTable.Add(selectionName, new bool?[4]);
+        }
+
+        bool?[] decList = SelectionTable[selectionName];
+        for (int i = 0; i < decList.Length; ++i)
+        {
+            if (i == decisition)
+            {
+                decList[i] = true;
+            }
+            else if (decList[i] != null && decList[i].Value)
+            {
+                decList[i] = false;
+            }
+        }
     }
 
     static void LoadData()
@@ -55,4 +101,18 @@ public class StoryData : MonoBehaviour {
     {
 
     }
+}
+
+public struct StoryModifier
+{
+    public enum Type
+    {
+        ChangeStatus,
+        GetItem,
+        GetMoney
+    }
+
+    public Type ModifierType;
+    public string Target;
+    public int Value;
 }
